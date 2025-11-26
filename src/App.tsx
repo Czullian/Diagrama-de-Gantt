@@ -144,6 +144,9 @@ function App() {
           <p className="text-gray-600">
             Gestiona tus tareas y subtareas con línea de tiempo visual
           </p>
+          <p className="text-gray-500 text-sm mt-1">
+            Propiedad de: Cinzia Zullian
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
