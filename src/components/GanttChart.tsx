@@ -1,351 +1,274 @@
-import React, { useMemo, useState } from 'react';
-import { Task } from '../App';
-import { Calendar, ChevronDown } from 'lucide-react';
+import React, { useMemo, useState } from "react";
+import { Calendar } from "lucide-react";
+import { Task } from "../App";
+
+type ViewMode = "days" | "weeks" | "months";
+
+interface TimeUnit {
+  date: Date;
+  label: string;
+  subLabel?: string;
+}
 
 interface GanttChartProps {
   tasks: Task[];
 }
 
-type ViewMode = 'days' | 'weeks' | 'months';
-
-interface TimeUnit {
-  label: string;
-  subLabel?: string;
-  date: Date;
-}
-
 export function GanttChart({ tasks }: GanttChartProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('days');
+  const [viewMode, setViewMode] = useState<ViewMode>("days");
 
+  // Normalizar tareas
+  const normalizedTasks = useMemo(
+    () =>
+      tasks.map((t) => ({
+        ...t,
+        startDate: new Date(t.startDate),
+        endDate: new Date(t.endDate),
+      })),
+    [tasks]
+  );
+
+  // ===== GENERACIÓN TOTALMENTE NUEVA DE MIN/MAX =====
   const { timeUnits, minDate, maxDate } = useMemo(() => {
-    if (tasks.length === 0) {
-      const today = new Date();
-      const start = new Date(today);
+    if (normalizedTasks.length === 0) {
+      const now = new Date();
+      const start = new Date(now);
       start.setDate(start.getDate() - 7);
-      const end = new Date(today);
+      const end = new Date(now);
       end.setDate(end.getDate() + 7);
-      
-      return generateTimeUnits(start, end, viewMode);
+      return generateUnits(start, end, viewMode);
     }
 
-    const allDates = tasks.flatMap(t => [t.startDate, t.endDate]);
-    const min = new Date(Math.min(...allDates.map(d => d.getTime())));
-    const max = new Date(Math.max(...allDates.map(d => d.getTime())));
-    
-    // Agregar un margen según el modo de vista
-    if (viewMode === 'months') {
-      min.setMonth(min.getMonth() - 1);
-      max.setMonth(max.getMonth() + 1);
-    } else if (viewMode === 'weeks') {
-      min.setDate(min.getDate() - 7);
-      max.setDate(max.getDate() + 7);
+    const all = normalizedTasks.flatMap((t) => [t.startDate, t.endDate]);
+    let min = new Date(Math.min(...all.map((d) => d.getTime())));
+    let max = new Date(Math.max(...all.map((d) => d.getTime())));
+
+    min.setHours(0, 0, 0, 0);
+    max.setHours(0, 0, 0, 0);
+
+    // Extensión según vista
+    if (viewMode === "days") {
+      min.setDate(min.getDate() - 3);
+      max.setDate(max.getDate() + 15);
+    } else if (viewMode === "weeks") {
+      min.setDate(min.getDate() - 14);
+      max.setDate(max.getDate() + 60);
     } else {
-      min.setDate(min.getDate() - 2);
-      max.setDate(max.getDate() + 2);
+      min.setMonth(min.getMonth() - 1);
+      max.setMonth(max.getMonth() + 6);
     }
-    
-    return generateTimeUnits(min, max, viewMode);
-  }, [tasks, viewMode]);
 
-  function generateTimeUnits(start: Date, end: Date, mode: ViewMode) {
+    // Máximo dinámico = junio del próximo año
+    const now = new Date();
+    const hardMax = new Date(now.getFullYear() + 1, 5, 30);
+    if (max > hardMax) max = hardMax;
+
+    return generateUnits(min, max, viewMode);
+  }, [normalizedTasks, viewMode]);
+
+  // ====================================================
+  //      GENERADOR DE UNIDADES — 100% A PRUEBA DE DST
+  // ====================================================
+  function generateUnits(start: Date, end: Date, mode: ViewMode) {
     const units: TimeUnit[] = [];
-    const minDate = new Date(start);
-    minDate.setHours(0, 0, 0, 0);
-    const maxDate = new Date(end);
-    maxDate.setHours(0, 0, 0, 0);
 
-    if (mode === 'days') {
-      for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+    const min = new Date(start);
+    const max = new Date(end);
+
+    if (mode === "days") {
+      const d = new Date(min);
+      while (d <= max) {
         units.push({
-          label: d.toLocaleDateString('es-ES', { weekday: 'short' }),
+          date: new Date(d),
+          label: d.toLocaleDateString("es-ES", { weekday: "short" }),
           subLabel: `${d.getDate()}/${d.getMonth() + 1}`,
-          date: new Date(d)
         });
-      }
-    } else if (mode === 'weeks') {
-      // Empezar desde el lunes de la semana que contiene minDate
-      const current = new Date(minDate);
-      const day = current.getDay();
-      const diff = day === 0 ? -6 : 1 - day; // Ajustar al lunes
-      current.setDate(current.getDate() + diff);
-
-      while (current <= maxDate) {
-        const weekEnd = new Date(current);
-        weekEnd.setDate(weekEnd.getDate() + 6);
-        
-        units.push({
-          label: `Semana ${getWeekNumber(current)}`,
-          subLabel: `${current.getDate()}/${current.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}`,
-          date: new Date(current)
-        });
-        
-        current.setDate(current.getDate() + 7);
-      }
-    } else if (mode === 'months') {
-      const current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-      
-      while (current <= maxDate) {
-        units.push({
-          label: current.toLocaleDateString('es-ES', { month: 'short' }),
-          subLabel: current.getFullYear().toString(),
-          date: new Date(current)
-        });
-        
-        current.setMonth(current.getMonth() + 1);
+        d.setDate(d.getDate() + 1);
       }
     }
 
-    return { timeUnits: units, minDate, maxDate };
+    else if (mode === "weeks") {
+      const d = new Date(min);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // ir a lunes
+
+      while (d <= max) {
+        const startW = new Date(d);
+        const endW = new Date(d);
+        endW.setDate(endW.getDate() + 6);
+
+        units.push({
+          date: new Date(startW),
+          label: `Semana ${getWeekNumber(startW)}`,
+          subLabel: `${startW.getDate()}/${startW.getMonth() + 1} - ${endW.getDate()}/${endW.getMonth() + 1}`,
+        });
+
+        d.setDate(d.getDate() + 7);
+      }
+    }
+
+    else {
+      const d = new Date(min.getFullYear(), min.getMonth(), 1);
+      while (d <= max) {
+        units.push({
+          date: new Date(d),
+          label: d.toLocaleDateString("es-ES", { month: "short" }),
+          subLabel: d.getFullYear().toString(),
+        });
+        d.setMonth(d.getMonth() + 1);
+      }
+    }
+
+    return { timeUnits: units, minDate: min, maxDate: max };
   }
 
-  function getWeekNumber(date: Date): number {
+  function getWeekNumber(date: Date) {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    return Math.ceil((d.getTime() - yearStart.getTime()) / 86400000 / 7) + 1;
   }
 
+  // ====================================================
+  //           POSICIÓN DE TAREAS BASADA EN ÍNDICES
+  // ====================================================
+  const getTaskPosition = (task: Task) => {
+    const start = new Date(task.startDate);
+    const end = new Date(task.endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    const startIndex = timeUnits.findIndex((u) => u.date >= start);
+    let endIndex = timeUnits.findIndex((u) => u.date >= end);
+
+    if (endIndex === -1) endIndex = timeUnits.length - 1;
+
+    const duration = Math.max(endIndex - startIndex + 1, 1);
+
+    return {
+      left: `${(startIndex / timeUnits.length) * 100}%`,
+      width: `${(duration / timeUnits.length) * 100}%`,
+    };
+  };
+
+  // ====================================================
+  //                     HOY
+  // ====================================================
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const getTaskPosition = (task: Task) => {
-    const taskStart = new Date(task.startDate);
-    taskStart.setHours(0, 0, 0, 0);
-    const taskEnd = new Date(task.endDate);
-    taskEnd.setHours(0, 0, 0, 0);
-    
-    let totalDuration: number;
-    let startOffset: number;
-    let taskDuration: number;
+  const todayIndex = timeUnits.findIndex((u) => u.date.getTime() === today.getTime());
+  const todayPos = todayIndex >= 0 ? (todayIndex / timeUnits.length) * 100 : -1;
 
-    if (viewMode === 'days') {
-      totalDuration = Math.floor((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      startOffset = Math.floor((taskStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
-      taskDuration = Math.floor((taskEnd.getTime() - taskStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    } else if (viewMode === 'weeks') {
-      totalDuration = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24 * 7));
-      startOffset = (taskStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24 * 7);
-      taskDuration = (taskEnd.getTime() - taskStart.getTime()) / (1000 * 60 * 60 * 24 * 7) + 0.15;
-    } else {
-      // months
-      totalDuration = timeUnits.length;
-      const startMonthIndex = timeUnits.findIndex(unit => {
-        return unit.date.getMonth() === taskStart.getMonth() && 
-               unit.date.getFullYear() === taskStart.getFullYear();
-      });
-      const endMonthIndex = timeUnits.findIndex(unit => {
-        return unit.date.getMonth() === taskEnd.getMonth() && 
-               unit.date.getFullYear() === taskEnd.getFullYear();
-      });
-      
-      startOffset = startMonthIndex >= 0 ? startMonthIndex : 0;
-      taskDuration = endMonthIndex >= startOffset ? endMonthIndex - startOffset + 1 : 1;
-    }
-    
-    const left = (startOffset / totalDuration) * 100;
-    const width = (taskDuration / totalDuration) * 100;
-    
-    return { left: `${Math.max(0, left)}%`, width: `${Math.max(1, width)}%` };
-  };
-
-  const getTodayPosition = () => {
-    if (viewMode === 'days') {
-      const totalDays = timeUnits.length;
-      // Encontrar el índice del día actual en timeUnits comparando día, mes y año
-      const todayIndex = timeUnits.findIndex(unit => {
-        return unit.date.getDate() === today.getDate() &&
-               unit.date.getMonth() === today.getMonth() &&
-               unit.date.getFullYear() === today.getFullYear();
-      });
-      if (todayIndex < 0) return -1;
-      // Centrar el indicador en el día sumando 0.5
-      // Calculamos el porcentaje dentro del área flex-1 del Gantt
-      const ganttAreaPercent = ((todayIndex + 0.5) / totalDays) * 100;
-      return ganttAreaPercent;
-    } else if (viewMode === 'weeks') {
-      const totalDuration = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24 * 7));
-      const todayOffset = (today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24 * 7);
-      const ganttAreaPercent = (todayOffset / totalDuration) * 100;
-      return ganttAreaPercent;
-    } else {
-      // months
-      const todayMonthIndex = timeUnits.findIndex(unit => {
-        return unit.date.getMonth() === today.getMonth() && 
-               unit.date.getFullYear() === today.getFullYear();
-      });
-      if (todayMonthIndex < 0) return -1;
-      
-      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-      const dayOfMonth = today.getDate();
-      const positionInMonth = dayOfMonth / daysInMonth;
-      
-      const ganttAreaPercent = ((todayMonthIndex + positionInMonth) / timeUnits.length) * 100;
-      return ganttAreaPercent;
-    }
-  };
-
-  const isToday = (date: Date) => {
-    if (viewMode !== 'days') return false;
-    return date.getDate() === today.getDate() &&
-           date.getMonth() === today.getMonth() &&
-           date.getFullYear() === today.getFullYear();
-  };
-
-  const isWeekend = (date: Date) => {
-    if (viewMode !== 'days') return false;
-    const day = date.getDay();
-    return day === 0 || day === 6;
-  };
-
-  // Organizar tareas por jerarquía
+  // ====================================================
+  //                  ORDENAR TAREAS
+  // ====================================================
   const organizedTasks = useMemo(() => {
-    const taskMap = new Map(tasks.map(t => [t.id, t]));
-    const result: Task[] = [];
-    
-    const addTaskAndChildren = (task: Task) => {
-      result.push(task);
-      const children = tasks.filter(t => t.parentId === task.id);
-      children.forEach(child => addTaskAndChildren(child));
+    const out: Task[] = [];
+    const rec = (t: Task) => {
+      out.push(t);
+      normalizedTasks.filter((s) => s.parentId === t.id).forEach(rec);
     };
-    
-    tasks.filter(t => !t.parentId).forEach(addTaskAndChildren);
-    
-    return result;
-  }, [tasks]);
+    normalizedTasks.filter((t) => !t.parentId).forEach(rec);
+    return out;
+  }, [normalizedTasks]);
 
-  const todayPosition = getTodayPosition();
-  const isTodayVisible = todayPosition >= 0 && todayPosition <= 100;
-
+  // ====================================================
+  //                     RENDER
+  // ====================================================
   return (
     <div>
-      {/* Controles de vista */}
+      {/* CONTROLES */}
       <div className="mb-4 flex items-center gap-2">
         <Calendar className="w-4 h-4 text-gray-600" />
         <span className="text-sm text-gray-600">Vista:</span>
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => setViewMode('days')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'days'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Días
-          </button>
-          <button
-            onClick={() => setViewMode('weeks')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'weeks'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Semanas
-          </button>
-          <button
-            onClick={() => setViewMode('months')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === 'months'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Meses
-          </button>
+
+        <div className="flex bg-gray-100 p-1 rounded-lg gap-1">
+          {(["days", "weeks", "months"] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-3 py-1 text-sm rounded ${
+                viewMode === mode ? "bg-white shadow-sm" : "text-gray-600"
+              }`}
+            >
+              {mode === "days" && "Días"}
+              {mode === "weeks" && "Semanas"}
+              {mode === "months" && "Meses"}
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* SCROLL */}
       <div className="overflow-x-auto">
-        <div className="min-w-[800px]">
-          {/* Encabezado de fechas */}
+        <div style={{ minWidth: `${timeUnits.length * 50}px` }}>
+          {/* HEADER */}
           <div className="flex border-b border-gray-200">
-            <div className="w-48 flex-shrink-0 px-4 py-2 bg-gray-50"></div>
-            <div className="flex-1 flex relative">
-              {/* Línea de hoy en el encabezado */}
-              {isTodayVisible && (
+            <div className="w-48 bg-gray-50 px-4 py-2 shrink-0"></div>
+
+            <div className="relative flex">
+              {todayPos !== -1 && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                  style={{ left: `${todayPosition}%` }}
-                ></div>
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+                  style={{ left: `${todayPos}%` }}
+                />
               )}
-              {timeUnits.map((unit, index) => (
+
+              {timeUnits.map((u, i) => (
                 <div
-                  key={index}
-                  className={`flex-1 text-center px-1 py-2 text-xs border-l border-gray-200 ${
-                    isToday(unit.date) ? 'bg-blue-50 font-semibold text-blue-600' : 'bg-gray-50'
-                  } ${isWeekend(unit.date) ? 'bg-gray-100' : ''}`}
+                  key={i}
+                  className="border-l border-gray-200 text-center text-xs py-2"
+                  style={{ width: 50 }}
                 >
-                  <div>{unit.label}</div>
-                  {unit.subLabel && <div className="text-[10px] text-gray-500">{unit.subLabel}</div>}
+                  <div>{u.label}</div>
+                  <div className="text-[10px] text-gray-500">{u.subLabel}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Tareas */}
-          <div className="flex">
-            <div className="w-48 flex-shrink-0"></div>
-            <div className="flex-1 relative">
-              {/* Línea de hoy */}
-              {isTodayVisible && (
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                  style={{ left: `${todayPosition}%` }}
-                >
-                  <div className="absolute -top-2 -left-2 w-4 h-4 bg-red-500 rounded-full"></div>
-                  <div className="absolute top-2 -left-8 text-xs text-red-500 whitespace-nowrap">
-                    Hoy
+          {/* FILAS */}
+          {organizedTasks.map((t) => {
+            const pos = getTaskPosition(t);
+            const isSub = !!t.parentId;
+
+            return (
+              <div key={t.id} className="flex border-b border-gray-200">
+                <div className="w-48 px-4 py-3 shrink-0">
+                  <span className={isSub ? "ml-6 text-gray-600" : ""}>
+                    {isSub && "└ "}
+                    {t.name}
+                  </span>
+                </div>
+
+                <div className="relative flex">
+                  {timeUnits.map((_, i) => (
+                    <div
+                      key={i}
+                      style={{ width: 50 }}
+                      className="border-l border-gray-200"
+                    />
+                  ))}
+
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-8 rounded text-xs text-white flex items-center px-2 shadow-sm"
+                    style={{
+                      ...pos,
+                      backgroundColor: t.color,
+                      opacity: isSub ? 0.85 : 1,
+                    }}
+                  >
+                    {t.name}
                   </div>
                 </div>
-              )}
-
-              <div>
-                {organizedTasks.map((task) => {
-                  const isSubtask = !!task.parentId;
-                  const position = getTaskPosition(task);
-                  
-                  return (
-                    <div key={task.id} className="flex border-b border-gray-200 hover:bg-gray-50">
-                      <div className="w-48 flex-shrink-0 px-4 py-3 flex items-center absolute left-0">
-                        <span className={`text-sm text-gray-700 ${isSubtask ? 'ml-6 text-gray-600' : ''}`}>
-                          {isSubtask && '└ '}
-                          {task.name}
-                        </span>
-                      </div>
-                      <div className="w-full relative">
-                        <div className="flex h-full">
-                          {timeUnits.map((unit, index) => (
-                            <div
-                              key={index}
-                              className={`flex-1 border-l border-gray-200 ${
-                                isWeekend(unit.date) ? 'bg-gray-50' : ''
-                              }`}
-                            ></div>
-                          ))}
-                        </div>
-                        <div
-                          className="absolute top-1/2 -translate-y-1/2 h-8 rounded flex items-center px-2 text-white text-xs shadow-sm"
-                          style={{
-                            ...position,
-                            backgroundColor: task.color,
-                            opacity: isSubtask ? 0.8 : 1
-                          }}
-                        >
-                          <span className="truncate">{task.name}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
-            </div>
-          </div>
+            );
+          })}
 
           {tasks.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              No hay tareas. Añade una tarea para comenzar.
+            <div className="text-center text-gray-500 py-8">
+              No hay tareas todavía.
             </div>
           )}
         </div>
