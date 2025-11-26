@@ -152,12 +152,22 @@ export function GanttChart({ tasks }: GanttChartProps) {
   const getTodayPosition = () => {
     if (viewMode === 'days') {
       const totalDays = timeUnits.length;
-      const todayDiff = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
-      return (todayDiff / totalDays) * 100;
+      // Encontrar el índice del día actual en timeUnits comparando día, mes y año
+      const todayIndex = timeUnits.findIndex(unit => {
+        return unit.date.getDate() === today.getDate() &&
+               unit.date.getMonth() === today.getMonth() &&
+               unit.date.getFullYear() === today.getFullYear();
+      });
+      if (todayIndex < 0) return -1;
+      // Centrar el indicador en el día sumando 0.5
+      // Calculamos el porcentaje dentro del área flex-1 del Gantt
+      const ganttAreaPercent = ((todayIndex + 0.5) / totalDays) * 100;
+      return ganttAreaPercent;
     } else if (viewMode === 'weeks') {
       const totalDuration = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24 * 7));
       const todayOffset = (today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24 * 7);
-      return (todayOffset / totalDuration) * 100;
+      const ganttAreaPercent = (todayOffset / totalDuration) * 100;
+      return ganttAreaPercent;
     } else {
       // months
       const todayMonthIndex = timeUnits.findIndex(unit => {
@@ -170,13 +180,16 @@ export function GanttChart({ tasks }: GanttChartProps) {
       const dayOfMonth = today.getDate();
       const positionInMonth = dayOfMonth / daysInMonth;
       
-      return ((todayMonthIndex + positionInMonth) / timeUnits.length) * 100;
+      const ganttAreaPercent = ((todayMonthIndex + positionInMonth) / timeUnits.length) * 100;
+      return ganttAreaPercent;
     }
   };
 
   const isToday = (date: Date) => {
     if (viewMode !== 'days') return false;
-    return date.getTime() === today.getTime();
+    return date.getDate() === today.getDate() &&
+           date.getMonth() === today.getMonth() &&
+           date.getFullYear() === today.getFullYear();
   };
 
   const isWeekend = (date: Date) => {
@@ -249,7 +262,14 @@ export function GanttChart({ tasks }: GanttChartProps) {
           {/* Encabezado de fechas */}
           <div className="flex border-b border-gray-200">
             <div className="w-48 flex-shrink-0 px-4 py-2 bg-gray-50"></div>
-            <div className="flex-1 flex">
+            <div className="flex-1 flex relative">
+              {/* Línea de hoy en el encabezado */}
+              {isTodayVisible && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
+                  style={{ left: `${todayPosition}%` }}
+                ></div>
+              )}
               {timeUnits.map((unit, index) => (
                 <div
                   key={index}
@@ -265,57 +285,62 @@ export function GanttChart({ tasks }: GanttChartProps) {
           </div>
 
           {/* Tareas */}
-          <div className="relative">
-            {/* Línea de hoy */}
-            {isTodayVisible && (
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                style={{ left: `calc(12rem + ${todayPosition}%)` }}
-              >
-                <div className="absolute -top-2 -left-2 w-4 h-4 bg-red-500 rounded-full"></div>
-                <div className="absolute -top-6 -left-8 text-xs text-red-500 whitespace-nowrap">
-                  Hoy
+          <div className="flex">
+            <div className="w-48 flex-shrink-0"></div>
+            <div className="flex-1 relative">
+              {/* Línea de hoy */}
+              {isTodayVisible && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
+                  style={{ left: `${todayPosition}%` }}
+                >
+                  <div className="absolute -top-2 -left-2 w-4 h-4 bg-red-500 rounded-full"></div>
+                  <div className="absolute top-2 -left-8 text-xs text-red-500 whitespace-nowrap">
+                    Hoy
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {organizedTasks.map((task) => {
-              const isSubtask = !!task.parentId;
-              const position = getTaskPosition(task);
-              
-              return (
-                <div key={task.id} className="flex border-b border-gray-200 hover:bg-gray-50">
-                  <div className="w-48 flex-shrink-0 px-4 py-3 flex items-center">
-                    <span className={`text-sm text-gray-700 ${isSubtask ? 'ml-6 text-gray-600' : ''}`}>
-                      {isSubtask && '└ '}
-                      {task.name}
-                    </span>
-                  </div>
-                  <div className="flex-1 relative">
-                    <div className="flex h-full">
-                      {timeUnits.map((unit, index) => (
+              <div>
+                {organizedTasks.map((task) => {
+                  const isSubtask = !!task.parentId;
+                  const position = getTaskPosition(task);
+                  
+                  return (
+                    <div key={task.id} className="flex border-b border-gray-200 hover:bg-gray-50">
+                      <div className="w-48 flex-shrink-0 px-4 py-3 flex items-center absolute left-0">
+                        <span className={`text-sm text-gray-700 ${isSubtask ? 'ml-6 text-gray-600' : ''}`}>
+                          {isSubtask && '└ '}
+                          {task.name}
+                        </span>
+                      </div>
+                      <div className="w-full relative">
+                        <div className="flex h-full">
+                          {timeUnits.map((unit, index) => (
+                            <div
+                              key={index}
+                              className={`flex-1 border-l border-gray-200 ${
+                                isWeekend(unit.date) ? 'bg-gray-50' : ''
+                              }`}
+                            ></div>
+                          ))}
+                        </div>
                         <div
-                          key={index}
-                          className={`flex-1 border-l border-gray-200 ${
-                            isWeekend(unit.date) ? 'bg-gray-50' : ''
-                          }`}
-                        ></div>
-                      ))}
+                          className="absolute top-1/2 -translate-y-1/2 h-8 rounded flex items-center px-2 text-white text-xs shadow-sm"
+                          style={{
+                            ...position,
+                            backgroundColor: task.color,
+                            opacity: isSubtask ? 0.8 : 1
+                          }}
+                        >
+                          <span className="truncate">{task.name}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 h-8 rounded flex items-center px-2 text-white text-xs shadow-sm"
-                      style={{
-                        ...position,
-                        backgroundColor: task.color,
-                        opacity: isSubtask ? 0.8 : 1
-                      }}
-                    >
-                      <span className="truncate">{task.name}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {tasks.length === 0 && (
